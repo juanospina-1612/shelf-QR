@@ -37,9 +37,8 @@
     const SUPABASE_URL = 'https://fyqsybiwvunqkzvycshi.supabase.co';
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5cXN5Yml3dnVucWt6dnljc2hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3ODE3NDMsImV4cCI6MjA5NDM1Nzc0M30.qFsTaEyMlFNB0Jf7f7_g2t7BshGbTOo_WpSX5DFuio4';
 
-    async function query(table, select, filter) {
-      const params = new URLSearchParams({ select, ...filter });
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, {
+    async function query(table, select, eqField, eqValue) {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${select}&${eqField}=eq.${eqValue}`, {
         headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }
       });
       return res.json();
@@ -50,19 +49,16 @@
       const content = document.getElementById('content');
 
       try {
-        // Buscar QR
-        const qrs = await query('Qr', 'id,assetId,kitId', { 'id=eq.': qrId });
+        const qrs = await query('Qr', 'id,assetId,kitId', 'id', qrId);
         if (!qrs.length) { content.innerHTML = '<div class="error">QR no encontrado</div>'; return; }
 
         const qr = qrs[0];
         let html = '';
 
         if (qr.assetId) {
-          // Es un activo
-          const assets = await query('Asset', 'id,title,description', { 'id=eq.': qr.assetId });
+          const assets = await query('Asset', 'id,title,description', 'id', qr.assetId);
           const asset = assets[0];
 
-          // Campos personalizados
           const fields = await fetch(`${SUPABASE_URL}/rest/v1/AssetCustomFieldValue?assetId=eq.${qr.assetId}&select=value,customField:CustomField(name)`, {
             headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }
           }).then(r => r.json());
@@ -78,11 +74,9 @@
           </div>`;
 
         } else if (qr.kitId) {
-          // Es un kit
-          const kits = await query('Kit', 'id,name,description', { 'id=eq.': qr.kitId });
+          const kits = await query('Kit', 'id,name,description', 'id', qr.kitId);
           const kit = kits[0];
 
-          // Activos del kit con campos personalizados
           const kitAssets = await fetch(`${SUPABASE_URL}/rest/v1/Asset?kitId=eq.${qr.kitId}&select=id,title,description,customFields:AssetCustomFieldValue(value,customField:CustomField(name))`, {
             headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }
           }).then(r => r.json());
