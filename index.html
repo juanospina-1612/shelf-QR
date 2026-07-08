@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Información del activo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #f3f4f6; min-height: 100vh; padding: 1rem; }
+    .container { max-width: 480px; margin: 0 auto; padding-top: 1rem; }
+    .logo { text-align: center; margin-bottom: 1.5rem; }
+    .logo img { width: 120px; }
+    .card { background: white; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+    .card h2 { font-size: 18px; font-weight: 700; color: #1d366f; margin-bottom: 8px; }
+    .card p { font-size: 14px; color: #6b7280; line-height: 1.6; margin-bottom: 12px; }
+    .field { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #f3f4f6; }
+    .field:last-child { border-bottom: none; }
+    .field-name { color: #6b7280; font-weight: 500; }
+    .field-value { color: #111; text-align: right; max-width: 60%; }
+    .section-title { font-size: 11px; font-weight: 600; color: #374151; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.05em; }
+    .component { background: #f9fafb; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+    .component h4 { font-size: 13px; font-weight: 600; color: #111; margin-bottom: 4px; }
+    .component p { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+    .loading { text-align: center; padding: 3rem; color: #6b7280; }
+    .error { text-align: center; padding: 2rem; color: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <img src="https://raw.githubusercontent.com/juanes490/shelf-inventory/main/apps/webapp/public/logo-automate.png" alt="Automate" onerror="this.style.display='none'" />
+    </div>
+    <div id="content" class="loading">Cargando información...</div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://fyqsybiwvunqkzvycshi.supabase.co';
+    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5cXN5Yml3dnVucWt6dnljc2hpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3ODE3NDMsImV4cCI6MjA5NDM1Nzc0M30.qFsTaEyMlFNB0Jf7f7_g2t7BshGbTOo_WpSX5DFuio4';
+
+    async function query(table, select, filter) {
+      const params = new URLSearchParams({ select, ...filter });
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, {
+        headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }
+      });
+      return res.json();
+    }
+
+    async function load() {
+      const qrId = location.pathname.split('/').pop();
+      const content = document.getElementById('content');
+
+      try {
+        // Buscar QR
+        const qrs = await query('Qr', 'id,assetId,kitId', { 'id=eq.': qrId });
+        if (!qrs.length) { content.innerHTML = '<div class="error">QR no encontrado</div>'; return; }
+
+        const qr = qrs[0];
+        let html = '';
+
+        if (qr.assetId) {
+          // Es un activo
+          const assets = await query('Asset', 'id,title,description', { 'id=eq.': qr.assetId });
+          const asset = assets[0];
+
+          // Campos personalizados
+          const fields = await fetch(`${SUPABASE_URL}/rest/v1/AssetCustomFieldValue?assetId=eq.${qr.assetId}&select=value,customField:CustomField(name)`, {
+            headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }
+          }).then(r => r.json());
+
+          html = `<div class="card">
+            <h2>${asset.title}</h2>
+            ${asset.description ? `<p>${asset.description}</p>` : ''}
+            ${fields.length ? `<div>${fields.map(f => `
+              <div class="field">
+                <span class="field-name">${f.customField?.name || ''}</span>
+                <span class="field-value">${f.value?.raw || ''}</span>
+              </div>`).join('')}</div>` : ''}
+          </div>`;
+
+        } else if (qr.kitId) {
+          // Es un kit
+          const kits = await query('Kit', 'id,name,description', { 'id=eq.': qr.kitId });
+          const kit = kits[0];
+
+          // Activos del kit con campos personalizados
+          const kitAssets = await fetch(`${SUPABASE_URL}/rest/v1/Asset?kitId=eq.${qr.kitId}&select=id,title,description,customFields:AssetCustomFieldValue(value,customField:CustomField(name))`, {
+            headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` }
+          }).then(r => r.json());
+
+          html = `<div class="card">
+            <h2>${kit.name}</h2>
+            ${kit.description ? `<p>${kit.description}</p>` : ''}
+            ${kitAssets.length ? `
+              <div class="section-title">Componentes del kit</div>
+              ${kitAssets.map(a => `
+                <div class="component">
+                  <h4>${a.title}</h4>
+                  ${a.description ? `<p>${a.description}</p>` : ''}
+                  ${a.customFields?.length ? a.customFields.map(f => `
+                    <div class="field">
+                      <span class="field-name">${f.customField?.name || ''}</span>
+                      <span class="field-value">${f.value?.raw || ''}</span>
+                    </div>`).join('') : ''}
+                </div>`).join('')}` : ''}
+          </div>`;
+        }
+
+        content.innerHTML = html || '<div class="error">Sin información disponible</div>';
+      } catch (e) {
+        content.innerHTML = '<div class="error">Error al cargar la información</div>';
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>
